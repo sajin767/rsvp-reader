@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import type { RSVPWord } from '../../domain/usecases/RSVPEngine';
 import { RSVPEngine, WPM_PRESETS } from '../../domain/usecases/RSVPEngine';
 import { useSettings } from './SettingsContext';
+import { useLibrary } from './LibraryContext';
 import type { Book } from '../../domain/entities/Book';
 import { BookRepository } from '../../data/repositories/BookRepository';
 
@@ -60,6 +61,7 @@ interface ReaderProviderProps {
 
 export function ReaderProvider({ children }: ReaderProviderProps) {
   const { settings, updateSettings } = useSettings();
+  const { refreshLibrary } = useLibrary();
   const engineRef = useRef<RSVPEngine | null>(null);
   
   const [currentBook, setCurrentBook] = useState<Book | null>(null);
@@ -119,10 +121,12 @@ export function ReaderProvider({ children }: ReaderProviderProps) {
         engineRef.current.loadText(book.content);
         if (book.currentPosition > 0) {
           engineRef.current.setPosition(book.currentPosition);
+          const wordAtPos = engineRef.current.getCurrentWord();
+          setCurrentWord(wordAtPos);
         }
         setCurrentBook(book);
         setTotalWords(engineRef.current.getTotalWords());
-        setCurrentIndex(book.currentPosition);
+        setCurrentIndex(book.currentPosition > 0 ? book.currentPosition : 0);
       }
     }
   }, []);
@@ -136,6 +140,10 @@ export function ReaderProvider({ children }: ReaderProviderProps) {
         engineRef.current.getPosition(),
         engineRef.current.getProgress()
       );
+      // Reload library so progress bar in library shows updated %
+      if (refreshLibrary) {
+        refreshLibrary();
+      }
     }
     setCurrentBook(null);
     setCurrentWord(null);
@@ -189,18 +197,12 @@ export function ReaderProvider({ children }: ReaderProviderProps) {
   }, [updateSettings]);
 
   const seekToProgress = useCallback((percentage: number) => {
-    const position = Math.floor((percentage / 100) * (engineRef.current?.getTotalWords() || 1));
+    const total = engineRef.current?.getTotalWords() || 1;
+    const position = Math.floor((percentage / 100) * total);
     engineRef.current?.setPosition(position);
-    if (engineRef.current?.isPlayingState() && !engineRef.current?.isPausedState()) {
-      // Already playing — callback will fire via scheduleNext
-    } else {
-      // Not playing — manually update UI
-      const word = engineRef.current?.getCurrentWord();
-      if (word) {
-        setCurrentWord(word);
-        setCurrentIndex(position);
-      }
-    }
+    const word = engineRef.current?.getCurrentWord();
+    if (word) setCurrentWord(word);
+    setCurrentIndex(position);
   }, []);
 
   const progress = totalWords > 0 ? Math.round((currentIndex / totalWords) * 100) : 0;
