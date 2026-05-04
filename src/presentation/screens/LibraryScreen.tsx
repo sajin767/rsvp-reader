@@ -64,8 +64,8 @@ export function LibraryScreen() {
     await toggleFavorite(book.id);
   };
 
-  const handleBookClick = (book: Book) => {
-    openBook(book);
+  const handleBookClick = async (book: Book) => {
+    await openBook(book);
     window.location.hash = '/reader';
   };
 

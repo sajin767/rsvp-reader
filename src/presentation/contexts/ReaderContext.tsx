@@ -18,7 +18,7 @@ interface ReaderContextType {
   isPaused: boolean;
   wpm: number;
   wpmPresets: typeof WPM_PRESETS;
-  openBook: (book: Book) => void;
+  openBook: (book: Book) => Promise<void>;
   closeBook: () => void;
   play: () => void;
   pause: () => void;
@@ -114,43 +114,54 @@ export function ReaderProvider({ children }: ReaderProviderProps) {
     }
   }, [settings]);
 
-  const openBook = useCallback((book: Book) => {
-    if (engineRef.current) {
-      engineRef.current.stop();
-      if (book.content) {
-        engineRef.current.loadText(book.content);
-        if (book.currentPosition > 0) {
-          engineRef.current.setPosition(book.currentPosition);
-          const wordAtPos = engineRef.current.getCurrentWord();
-          setCurrentWord(wordAtPos);
-        }
-        setCurrentBook(book);
-        setTotalWords(engineRef.current.getTotalWords());
-        setCurrentIndex(book.currentPosition > 0 ? book.currentPosition : 0);
+  const saveCurrentProgress = useCallback(async () => {
+    if (!engineRef.current || !currentBook) return;
+
+    await bookRepository.updateProgress(
+      currentBook.id,
+      engineRef.current.getPosition(),
+      engineRef.current.getProgress()
+    );
+
+    // Reload library so progress bars reflect switches made without using back.
+    await refreshLibrary();
+  }, [currentBook, refreshLibrary]);
+
+  const openBook = useCallback(async (book: Book) => {
+    if (!engineRef.current) return;
+
+    releaseWakeLock();
+    await saveCurrentProgress();
+    engineRef.current.stop();
+
+    const latestBook = await bookRepository.getById(book.id) || book;
+    if (latestBook.content) {
+      engineRef.current.loadText(latestBook.content);
+      if (latestBook.currentPosition > 0) {
+        engineRef.current.setPosition(latestBook.currentPosition);
       }
+
+      setCurrentWord(engineRef.current.getCurrentWord());
+      setCurrentBook(latestBook);
+      setTotalWords(engineRef.current.getTotalWords());
+      setCurrentIndex(latestBook.currentPosition > 0 ? latestBook.currentPosition : 0);
+      setIsPlaying(false);
+      setIsPaused(false);
     }
-  }, []);
+  }, [saveCurrentProgress]);
 
   const closeBook = useCallback(async () => {
     releaseWakeLock();
     if (engineRef.current && currentBook) {
       engineRef.current.stop();
-      await bookRepository.updateProgress(
-        currentBook.id,
-        engineRef.current.getPosition(),
-        engineRef.current.getProgress()
-      );
-      // Reload library so progress bar in library shows updated %
-      if (refreshLibrary) {
-        refreshLibrary();
-      }
+      await saveCurrentProgress();
     }
     setCurrentBook(null);
     setCurrentWord(null);
     setCurrentIndex(0);
     setIsPlaying(false);
     setIsPaused(false);
-  }, [currentBook]);
+  }, [currentBook, saveCurrentProgress]);
 
   const play = useCallback(() => {
     engineRef.current?.play();
