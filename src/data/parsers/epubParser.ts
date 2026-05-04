@@ -44,7 +44,7 @@ export async function parseEpubFile(file: File): Promise<ParsedBook> {
           content: fullText.trim(),
           totalWords: words.length,
         });
-      } catch (error) {
+      } catch (_error) {
         reject(new Error('Failed to parse EPUB file'));
       }
     };

@@ -38,7 +38,7 @@ async function getPdfJsLib() {
           pdfjsLib.GlobalWorkerOptions.workerSrc = url;
           console.log('[parsePdfFile] Worker loaded from blob URL');
         }
-      } catch (e) {
+      } catch (_e) {
         console.warn('[parsePdfFile] Could not load worker blob, using default');
       }
     }

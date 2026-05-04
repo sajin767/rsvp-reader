@@ -105,6 +105,8 @@ export function ReaderProvider({ children }: ReaderProviderProps) {
       engineRef.current?.destroy();
       releaseWakeLock();
     };
+    // Engine is initialized once; later settings changes are applied by the settings effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update engine settings when settings change
