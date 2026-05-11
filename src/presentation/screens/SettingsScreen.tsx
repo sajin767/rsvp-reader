@@ -1,3 +1,9 @@
+import { useEffect, useState } from 'react';
+import type { ReadingStats } from '../../domain/entities/ReadingStats';
+import { defaultStats } from '../../domain/entities/ReadingStats';
+import { AppBackupRepository } from '../../data/repositories/AppBackupRepository';
+import { StatsRepository } from '../../data/repositories/StatsRepository';
+import { useLibrary } from '../contexts/LibraryContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -17,9 +23,45 @@ const FONT_SIZES = [
   { label: 'XL', value: 72 },
 ];
 
+const statsRepository = new StatsRepository();
+const appBackupRepository = new AppBackupRepository();
+
 export function SettingsScreen() {
   const { settings, updateSettings, resetSettings } = useSettings();
   const { isDark, toggleTheme } = useTheme();
+  const { refreshLibrary } = useLibrary();
+  const [stats, setStats] = useState<ReadingStats>(defaultStats);
+
+  useEffect(() => {
+    void statsRepository.getStats().then(setStats);
+  }, []);
+
+  const handleExportBackup = () => {
+    const payload = appBackupRepository.exportBackup();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `rsvp-reader-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const content = await file.text();
+      appBackupRepository.importBackup(JSON.parse(content));
+      await refreshLibrary();
+      window.location.reload();
+    } catch (error) {
+      alert(`Backup import failed: ${error instanceof Error ? error.message : 'Invalid backup file'}`);
+    } finally {
+      event.target.value = '';
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -28,12 +70,10 @@ export function SettingsScreen() {
       </header>
 
       <main className="flex-1 p-4 overflow-auto pb-24">
-        {/* Appearance Section */}
         <div className="mb-6">
           <h2 className="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wide">Appearance</h2>
-          
+
           <div className="bg-surface rounded-xl p-4 space-y-4">
-            {/* Dark Mode Toggle */}
             <div className="flex items-center justify-between">
               <span className="text-sm">Dark Mode</span>
               <button
@@ -44,14 +84,13 @@ export function SettingsScreen() {
               </button>
             </div>
 
-            {/* Font Size */}
             <div>
               <span className="text-sm mb-2 block">Font Size</span>
               <div className="flex gap-2">
                 {FONT_SIZES.map((size) => (
                   <button
                     key={size.value}
-                    onClick={() => updateSettings({ fontSize: size.value })}
+                    onClick={() => { void updateSettings({ fontSize: size.value }); }}
                     className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
                       settings.fontSize === size.value
                         ? 'bg-blue-600 text-white'
@@ -64,12 +103,11 @@ export function SettingsScreen() {
               </div>
             </div>
 
-            {/* Font Family */}
             <div>
               <span className="text-sm mb-2 block">Font</span>
               <select
                 value={settings.fontFamily}
-                onChange={(e) => updateSettings({ fontFamily: e.target.value as any })}
+                onChange={(e) => { void updateSettings({ fontFamily: e.target.value as typeof settings.fontFamily }); }}
                 className="w-full bg-gray-800 text-gray-200 rounded-lg px-3 py-2 text-sm"
               >
                 <option value="System Default">System Default</option>
@@ -78,14 +116,13 @@ export function SettingsScreen() {
               </select>
             </div>
 
-            {/* ORP Highlight Color */}
             <div>
               <span className="text-sm mb-2 block">ORP Highlight Color</span>
               <div className="flex gap-2">
                 {HIGHLIGHT_COLORS.map((c) => (
                   <button
                     key={c.value}
-                    onClick={() => updateSettings({ highlightColor: c.value as any })}
+                    onClick={() => { void updateSettings({ highlightColor: c.value as typeof settings.highlightColor }); }}
                     className={`w-10 h-10 rounded-full border-2 transition-all ${
                       settings.highlightColor === c.value
                         ? 'border-white scale-110'
@@ -98,14 +135,13 @@ export function SettingsScreen() {
               </div>
             </div>
 
-            {/* Warm Mode */}
             <div>
               <span className="text-sm mb-2 block">Warm Mode (Reduce Blue Light)</span>
               <div className="flex gap-2">
                 {['off', 'low', 'medium', 'high'].map((level) => (
                   <button
                     key={level}
-                    onClick={() => updateSettings({ warmMode: level as any })}
+                    onClick={() => { void updateSettings({ warmMode: level as typeof settings.warmMode }); }}
                     className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors ${
                       settings.warmMode === level
                         ? 'bg-orange-600 text-white'
@@ -120,12 +156,10 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        {/* Reading Section */}
         <div className="mb-6">
           <h2 className="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wide">Reading</h2>
-          
+
           <div className="bg-surface rounded-xl p-4 space-y-4">
-            {/* Default Speed */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm">Default Speed</span>
@@ -136,7 +170,7 @@ export function SettingsScreen() {
                 min="50"
                 max="1000"
                 value={settings.wpm}
-                onChange={(e) => updateSettings({ wpm: Number(e.target.value) })}
+                onChange={(e) => { void updateSettings({ wpm: Number(e.target.value) }); }}
                 className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
@@ -145,63 +179,58 @@ export function SettingsScreen() {
               </div>
             </div>
 
-            {/* Phantom Words Toggle */}
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm block">Phantom Words</span>
                 <span className="text-xs text-gray-500">Show word before & after</span>
               </div>
               <button
-                onClick={() => updateSettings({ showPhantomWords: !settings.showPhantomWords })}
+                onClick={() => { void updateSettings({ showPhantomWords: !settings.showPhantomWords }); }}
                 className={`w-12 h-6 rounded-full transition-colors ${settings.showPhantomWords ? 'bg-blue-500' : 'bg-gray-600'}`}
               >
                 <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.showPhantomWords ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
-            {/* Focus Mode Toggle */}
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm block">Focus Mode</span>
                 <span className="text-xs text-gray-500">Hide controls while reading</span>
               </div>
               <button
-                onClick={() => updateSettings({ focusMode: !settings.focusMode })}
+                onClick={() => { void updateSettings({ focusMode: !settings.focusMode }); }}
                 className={`w-12 h-6 rounded-full transition-colors ${settings.focusMode ? 'bg-blue-500' : 'bg-gray-600'}`}
               >
                 <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.focusMode ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
-            {/* Punctuation Pause */}
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm block">Punctuation Pause</span>
                 <span className="text-xs text-gray-500">Pause at punctuation marks</span>
               </div>
               <button
-                onClick={() => updateSettings({ punctuationPause: !settings.punctuationPause })}
+                onClick={() => { void updateSettings({ punctuationPause: !settings.punctuationPause }); }}
                 className={`w-12 h-6 rounded-full transition-colors ${settings.punctuationPause ? 'bg-blue-500' : 'bg-gray-600'}`}
               >
                 <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.punctuationPause ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
-            {/* Intelligent Pacing Toggle */}
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm block">Intelligent Pacing</span>
                 <span className="text-xs text-gray-500">Slow for names & difficult words</span>
               </div>
               <button
-                onClick={() => updateSettings({ intelligentPacing: !settings.intelligentPacing })}
+                onClick={() => { void updateSettings({ intelligentPacing: !settings.intelligentPacing }); }}
                 className={`w-12 h-6 rounded-full transition-colors ${settings.intelligentPacing ? 'bg-blue-500' : 'bg-gray-600'}`}
               >
                 <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.intelligentPacing ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
-            {/* Intelligent Pacing Extra Delay */}
             {settings.intelligentPacing && (
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -214,41 +243,38 @@ export function SettingsScreen() {
                   max="300"
                   step="10"
                   value={settings.intelligentPacingExtraDelay}
-                  onChange={(e) => updateSettings({ intelligentPacingExtraDelay: Number(e.target.value) })}
+                  onChange={(e) => { void updateSettings({ intelligentPacingExtraDelay: Number(e.target.value) }); }}
                   className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
             )}
 
-            {/* Tap to Freeze */}
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm block">Tap & Hold to Freeze</span>
                 <span className="text-xs text-gray-500">Hold word to stop on it</span>
               </div>
               <button
-                onClick={() => updateSettings({ tapToFreeze: !settings.tapToFreeze })}
+                onClick={() => { void updateSettings({ tapToFreeze: !settings.tapToFreeze }); }}
                 className={`w-12 h-6 rounded-full transition-colors ${settings.tapToFreeze ? 'bg-blue-500' : 'bg-gray-600'}`}
               >
                 <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.tapToFreeze ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
-            {/* Break Reminders */}
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm block">Break Reminders</span>
                 <span className="text-xs text-gray-500">Remind to rest your eyes</span>
               </div>
               <button
-                onClick={() => updateSettings({ breakReminders: !settings.breakReminders })}
+                onClick={() => { void updateSettings({ breakReminders: !settings.breakReminders }); }}
                 className={`w-12 h-6 rounded-full transition-colors ${settings.breakReminders ? 'bg-blue-500' : 'bg-gray-600'}`}
               >
                 <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.breakReminders ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
-            {/* Break Reminder Interval */}
             {settings.breakReminders && (
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -261,7 +287,7 @@ export function SettingsScreen() {
                   max="45"
                   step="5"
                   value={settings.breakReminderMinutes}
-                  onChange={(e) => updateSettings({ breakReminderMinutes: Number(e.target.value) })}
+                  onChange={(e) => { void updateSettings({ breakReminderMinutes: Number(e.target.value) }); }}
                   className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
@@ -269,38 +295,54 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        {/* Display Section */}
+        <div className="mb-6">
+          <h2 className="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wide">Voice</h2>
+
+          <div className="bg-surface rounded-xl p-4 space-y-4">
+            <div>
+              <label className="text-sm text-white" htmlFor="natural-voice-endpoint">Natural voice endpoint or Deepgram key</label>
+              <input
+                id="natural-voice-endpoint"
+                value={settings.naturalVoiceEndpoint}
+                onChange={(e) => { void updateSettings({ naturalVoiceEndpoint: e.target.value }); }}
+                placeholder="Deepgram API key or https://your-service/manifest"
+                className="mt-2 w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-200 outline-none ring-1 ring-gray-700 focus:ring-blue-500"
+              />
+              <div className="mt-2 text-xs text-gray-500">
+                Paste a Deepgram key for direct Aura voice, or a manifest endpoint for exact word timestamps. Without this, Voice uses device TTS.
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="mb-6">
           <h2 className="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wide">Display</h2>
-          
+
           <div className="bg-surface rounded-xl p-4 space-y-4">
-            {/* Fade Effect */}
             <div className="flex items-center justify-between">
               <span className="text-sm">Fade Effect</span>
               <button
-                onClick={() => updateSettings({ fadeEffect: !settings.fadeEffect })}
+                onClick={() => { void updateSettings({ fadeEffect: !settings.fadeEffect }); }}
                 className={`w-12 h-6 rounded-full transition-colors ${settings.fadeEffect ? 'bg-blue-500' : 'bg-gray-600'}`}
               >
                 <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.fadeEffect ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
-            {/* Progress Bar */}
             <div className="flex items-center justify-between">
               <span className="text-sm">Show Progress Bar</span>
               <button
-                onClick={() => updateSettings({ showProgressBar: !settings.showProgressBar })}
+                onClick={() => { void updateSettings({ showProgressBar: !settings.showProgressBar }); }}
                 className={`w-12 h-6 rounded-full transition-colors ${settings.showProgressBar ? 'bg-blue-500' : 'bg-gray-600'}`}
               >
                 <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.showProgressBar ? 'translate-x-6' : 'translate-x-0.5'}`} />
               </button>
             </div>
 
-            {/* WPM Indicator */}
             <div className="flex items-center justify-between">
               <span className="text-sm">Show WPM Indicator</span>
               <button
-                onClick={() => updateSettings({ showWpmIndicator: !settings.showWpmIndicator })}
+                onClick={() => { void updateSettings({ showWpmIndicator: !settings.showWpmIndicator }); }}
                 className={`w-12 h-6 rounded-full transition-colors ${settings.showWpmIndicator ? 'bg-blue-500' : 'bg-gray-600'}`}
               >
                 <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.showWpmIndicator ? 'translate-x-6' : 'translate-x-0.5'}`} />
@@ -309,43 +351,83 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        {/* Stats Section */}
         <div className="mb-6">
           <h2 className="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wide">Statistics</h2>
-          
+
           <div className="bg-surface rounded-xl p-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-500">0</div>
+                <div className="text-2xl font-bold text-blue-500">{stats.totalWordsRead.toLocaleString()}</div>
                 <div className="text-xs text-gray-500">Words Read</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-500">0</div>
+                <div className="text-2xl font-bold text-blue-500">{stats.booksCompleted}</div>
                 <div className="text-xs text-gray-500">Books Done</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-500">0</div>
+                <div className="text-2xl font-bold text-blue-500">{stats.currentStreak}</div>
                 <div className="text-xs text-gray-500">Day Streak</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-500">0m</div>
+                <div className="text-2xl font-bold text-blue-500">{stats.todayMinutes.toFixed(1)}m</div>
                 <div className="text-xs text-gray-500">Today</div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-lg bg-gray-900 p-3">
+                <div className="text-lg font-semibold text-white">{stats.averageWpm}</div>
+                <div className="text-[11px] text-gray-500">Avg WPM</div>
+              </div>
+              <div className="rounded-lg bg-gray-900 p-3">
+                <div className="text-lg font-semibold text-white">{stats.totalMinutes.toFixed(1)}m</div>
+                <div className="text-[11px] text-gray-500">All Time</div>
+              </div>
+              <div className="rounded-lg bg-gray-900 p-3">
+                <div className="text-lg font-semibold text-white">{stats.totalSessions}</div>
+                <div className="text-[11px] text-gray-500">Sessions</div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Reset */}
+        <div className="mb-6">
+          <h2 className="text-sm font-medium text-gray-400 mb-3 uppercase tracking-wide">Cloud Backup</h2>
+
+          <div className="bg-surface rounded-xl p-4 space-y-4">
+            <div>
+              <div className="text-sm text-white">Portable sync file</div>
+              <div className="text-xs text-gray-500 mt-1">
+                Export your full app state and store it in iCloud Drive, Google Drive, Dropbox, or any other cloud folder.
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={handleExportBackup}
+                className="flex-1 rounded-lg bg-blue-600 py-2 text-sm text-white hover:bg-blue-500"
+              >
+                Export Backup
+              </button>
+              <label className="flex-1 rounded-lg bg-gray-800 py-2 text-center text-sm text-gray-200 hover:bg-gray-700 cursor-pointer">
+                Import Backup
+                <input type="file" accept=".json,application/json" onChange={(e) => { void handleImportBackup(e); }} className="hidden" />
+              </label>
+            </div>
+            <div className="text-xs text-amber-300">
+              Full account-based sync is not in this repo yet because it requires a backend and auth provider.
+            </div>
+          </div>
+        </div>
+
         <div className="mb-6">
           <button
-            onClick={resetSettings}
+            onClick={() => { void resetSettings(); }}
             className="w-full py-3 bg-gray-800 text-gray-400 rounded-xl text-sm hover:bg-gray-700 transition-colors"
           >
             Reset to Defaults
           </button>
         </div>
 
-        {/* About */}
         <div className="text-center text-xs text-gray-600">
           <p>RSVP Reader v1.0.0</p>
           <p>Speed reading with RSVP technology</p>

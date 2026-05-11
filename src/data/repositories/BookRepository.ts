@@ -84,7 +84,25 @@ export class BookRepository implements IBookRepository {
     try {
       const stored = localStorage.getItem(BOOKS_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored) as Array<Partial<Book>>;
+        return parsed.map((book) => ({
+          id: book.id || crypto.randomUUID(),
+          title: book.title || 'Untitled',
+          author: book.author || 'Unknown Author',
+          fileType: (book.fileType || 'txt') as Book['fileType'],
+          filePath: book.filePath || '',
+          fileSize: book.fileSize || 0,
+          totalWords: book.totalWords || 0,
+          currentPosition: book.currentPosition || 0,
+          currentProgress: book.currentProgress || 0,
+          lastReadAt: book.lastReadAt || null,
+          addedAt: book.addedAt || new Date().toISOString(),
+          isFavorite: book.isFavorite || false,
+          tags: book.tags || [],
+          chapters: book.chapters || [],
+          coverImage: book.coverImage,
+          content: book.content,
+        }));
       }
       return [];
     } catch (error) {

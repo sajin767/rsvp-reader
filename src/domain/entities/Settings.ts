@@ -32,6 +32,8 @@ export interface AppSettings {
   // Break reminders
   breakReminders: boolean;
   breakReminderMinutes: number; // minutes between reminders
+  // Natural voice mode
+  naturalVoiceEndpoint: string;
 }
 
 // Default settings
@@ -57,4 +59,5 @@ export const defaultSettings: AppSettings = {
   warmMode: 'off',
   breakReminders: false,
   breakReminderMinutes: 20,
+  naturalVoiceEndpoint: '',
 };

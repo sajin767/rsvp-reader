@@ -4,6 +4,10 @@ export interface ReadingStats {
   booksCompleted: number;
   currentStreak: number;
   todayMinutes: number;
+  totalMinutes: number;
+  totalSessions: number;
+  averageWpm: number;
+  lastSessionWpm: number;
   lastReadDate: string | null;
 }
 
@@ -13,5 +17,9 @@ export const defaultStats: ReadingStats = {
   booksCompleted: 0,
   currentStreak: 0,
   todayMinutes: 0,
+  totalMinutes: 0,
+  totalSessions: 0,
+  averageWpm: 0,
+  lastSessionWpm: 0,
   lastReadDate: null,
 };

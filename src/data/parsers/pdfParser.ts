@@ -1,5 +1,6 @@
 // PDF File Parser - extract text from PDF files using pdfjs-dist
 import type { ParsedBook } from './txtParser';
+import type { BookChapter } from '../../domain/entities/Book';
 
 // Worker source - use the legacy build which has better cross-platform support
 // This is bundled with pdfjs-dist and works on Android WebView
@@ -83,6 +84,18 @@ export async function parsePdfFile(file: File): Promise<ParsedBook> {
         let fullText = '';
         let totalItems = 0;
         const numPages = pdf.numPages;
+        const chapters: BookChapter[] = [];
+        let wordOffset = 0;
+        let metadataTitle = '';
+        let metadataAuthor = '';
+
+        try {
+          const metadata = await pdf.getMetadata();
+          metadataTitle = String(metadata.info?.Title || metadata.metadata?.get?.('dc:title') || '').trim();
+          metadataAuthor = String(metadata.info?.Author || metadata.metadata?.get?.('dc:creator') || '').trim();
+        } catch (metadataError) {
+          console.warn('[parsePdfFile] Metadata extraction warning:', metadataError);
+        }
         
         for (let pageNum = 1; pageNum <= numPages; pageNum++) {
           console.log('[parsePdfFile] Processing page', pageNum, 'of', numPages);
@@ -104,6 +117,16 @@ export async function parsePdfFile(file: File): Promise<ParsedBook> {
           
           const pageText = pageTexts.join(' ');
           fullText += pageText + '\n';
+          const pageWordCount = pageText.split(/\s+/).filter(Boolean).length;
+          if (pageWordCount > 0) {
+            chapters.push({
+              id: `page-${pageNum}`,
+              title: `Page ${pageNum}`,
+              startWord: wordOffset,
+              endWord: Math.max(wordOffset + pageWordCount - 1, wordOffset),
+            });
+            wordOffset += pageWordCount;
+          }
           
           console.log('[parsePdfFile] Page', pageNum, 'text items:', pageTexts.length);
         }
@@ -138,10 +161,11 @@ export async function parsePdfFile(file: File): Promise<ParsedBook> {
         
         console.log('[parsePdfFile] SUCCESS - words:', words.length);
         resolve({
-          title: fileName || 'Untitled PDF',
-          author: 'Unknown Author',
+          title: metadataTitle || fileName || 'Untitled PDF',
+          author: metadataAuthor || 'Unknown Author',
           content: cleanedText,
           totalWords: words.length,
+          chapters,
         });
       } catch (error) {
         console.error('[parsePdfFile] Parse error:', error);

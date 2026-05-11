@@ -1,9 +1,16 @@
+export interface BookChapter {
+  id: string;
+  title: string;
+  startWord: number;
+  endWord: number;
+}
+
 // Book entity - represents a book in the library
 export interface Book {
   id: string;
   title: string;
   author: string;
-  fileType: 'pdf' | 'epub' | 'txt';
+  fileType: 'pdf' | 'epub' | 'txt' | 'article';
   filePath: string;
   fileSize: number;
   totalWords: number;
@@ -13,6 +20,7 @@ export interface Book {
   addedAt: string;
   isFavorite: boolean;
   tags: string[];
+  chapters: BookChapter[];
   coverImage?: string;
   content?: string;
 }
@@ -33,6 +41,7 @@ export function createBook(params: Partial<Book> & { title: string; filePath: st
     addedAt: new Date().toISOString(),
     isFavorite: params.isFavorite || false,
     tags: params.tags || [],
+    chapters: params.chapters || [],
     coverImage: params.coverImage,
     content: params.content,
   };

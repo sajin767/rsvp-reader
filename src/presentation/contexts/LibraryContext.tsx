@@ -7,12 +7,14 @@ import { BookRepository } from '../../data/repositories/BookRepository';
 import { parseTxtFile } from '../../data/parsers/txtParser';
 import { parsePdfFile } from '../../data/parsers/pdfParser';
 import { parseEpubFile } from '../../data/parsers/epubParser';
+import { parseArticleUrl } from '../../data/parsers/articleParser';
 
 interface LibraryContextType {
   books: Book[];
   isLoading: boolean;
   error: string | null;
-  importBook: (file: File) => Promise<void>;
+  importBook: (file: File) => Promise<Book>;
+  importArticleUrl: (url: string) => Promise<Book>;
   deleteBook: (id: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
   refreshLibrary: () => Promise<void>;
@@ -49,6 +51,12 @@ export function LibraryProvider({ children }: LibraryProviderProps) {
     loadBooks();
   }, [loadBooks]);
 
+  const saveImportedBook = useCallback(async (book: Book) => {
+    await repository.save(book);
+    setBooks((prev) => [...prev, book]);
+    return book;
+  }, []);
+
   const importBook = useCallback(async (file: File) => {
     try {
       setError(null);
@@ -84,21 +92,48 @@ export function LibraryProvider({ children }: LibraryProviderProps) {
         totalWords: parsed.totalWords,
         content: parsed.content,
         fileSize: file.size,
+        chapters: parsed.chapters,
+        coverImage: parsed.coverImage,
       });
       console.log('[importBook] Book created, id:', book.id);
 
       console.log('[importBook] Saving to repository');
-      await repository.save(book);
+      await saveImportedBook(book);
       console.log('[importBook] Save succeeded');
-      
-      setBooks(prev => [...prev, book]);
       console.log('[importBook] Complete');
+      return book;
     } catch (err) {
       console.error('[importBook] Error:', err);
       setError(`Failed to import book: ${err}`);
       throw err;
     }
-  }, []);
+  }, [saveImportedBook]);
+
+  const importArticleUrl = useCallback(async (url: string) => {
+    try {
+      setError(null);
+      const parsed = await parseArticleUrl(url);
+      const normalizedUrl = new URL(url.trim()).toString();
+      const book = createBook({
+        title: parsed.title,
+        author: parsed.author,
+        fileType: 'article',
+        filePath: normalizedUrl,
+        totalWords: parsed.totalWords,
+        content: parsed.content,
+        fileSize: parsed.content.length,
+        chapters: parsed.chapters,
+        coverImage: parsed.coverImage,
+      });
+
+      await saveImportedBook(book);
+      return book;
+    } catch (err) {
+      console.error('[importArticleUrl] Error:', err);
+      setError(`Failed to import article: ${err}`);
+      throw err;
+    }
+  }, [saveImportedBook]);
 
   const deleteBook = useCallback(async (id: string) => {
     try {
@@ -124,7 +159,7 @@ export function LibraryProvider({ children }: LibraryProviderProps) {
   }, [loadBooks]);
 
   return (
-    <LibraryContext.Provider value={{ books, isLoading, error, importBook, deleteBook, toggleFavorite, refreshLibrary }}>
+    <LibraryContext.Provider value={{ books, isLoading, error, importBook, importArticleUrl, deleteBook, toggleFavorite, refreshLibrary }}>
       {children}
     </LibraryContext.Provider>
   );

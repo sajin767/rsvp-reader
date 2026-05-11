@@ -1,5 +1,11 @@
 // EPUB File Parser - extract text from EPUB files using epubjs
 import type { ParsedBook } from './txtParser';
+import type { BookChapter } from '../../domain/entities/Book';
+
+function normalizeMetadataText(value: string | undefined | null, fallback: string) {
+  if (!value) return fallback;
+  return value.replace(/\s+/g, ' ').trim() || fallback;
+}
 
 export async function parseEpubFile(file: File): Promise<ParsedBook> {
   const ePub = await import('epubjs');
@@ -15,8 +21,11 @@ export async function parseEpubFile(file: File): Promise<ParsedBook> {
         
         // Try to get metadata
         const metadata = await book.loaded.metadata;
+        const navigation = await book.loaded.navigation;
         
         let fullText = '';
+        let wordOffset = 0;
+        const chapters: BookChapter[] = [];
         
         // Get all chapters/spine items
         const spine = book.spine as any;
@@ -27,7 +36,20 @@ export async function parseEpubFile(file: File): Promise<ParsedBook> {
             const doc = await book.load(item.href) as Document;
             const body = doc.body || doc.documentElement;
             if (body && body.textContent) {
-              fullText += body.textContent + '\n';
+              const chapterText = body.textContent.replace(/\s+/g, ' ').trim();
+              if (chapterText) {
+                const navMatch = navigation?.toc?.find?.((entry: { href?: string; label?: string }) => entry.href && item.href?.includes(entry.href.split('#')[0]));
+                const chapterTitle = normalizeMetadataText(navMatch?.label || doc.querySelector('h1,h2,h3,title')?.textContent, `Chapter ${chapters.length + 1}`);
+                const chapterWords = chapterText.split(/\s+/).filter(Boolean).length;
+                chapters.push({
+                  id: `chapter-${chapters.length + 1}`,
+                  title: chapterTitle,
+                  startWord: wordOffset,
+                  endWord: Math.max(wordOffset + chapterWords - 1, wordOffset),
+                });
+                wordOffset += chapterWords;
+                fullText += chapterText + '\n';
+              }
             }
           } catch {
             // Skip failed chapters
@@ -37,12 +59,23 @@ export async function parseEpubFile(file: File): Promise<ParsedBook> {
         
         const words = fullText.trim().split(/\s+/).filter(w => w.length > 0);
         const fileName = file.name.replace(/\.epub$/i, '').replace(/[-_]/g, ' ');
+        let coverImage: string | undefined;
+
+        try {
+          if (typeof (book as any).coverUrl === 'function') {
+            coverImage = await (book as any).coverUrl();
+          }
+        } catch {
+          coverImage = undefined;
+        }
         
         resolve({
-          title: metadata.title || fileName || 'Untitled EPUB',
-          author: metadata.creator || 'Unknown Author',
+          title: normalizeMetadataText(metadata.title, fileName || 'Untitled EPUB'),
+          author: normalizeMetadataText(metadata.creator, 'Unknown Author'),
           content: fullText.trim(),
           totalWords: words.length,
+          chapters,
+          coverImage,
         });
       } catch (_error) {
         reject(new Error('Failed to parse EPUB file'));

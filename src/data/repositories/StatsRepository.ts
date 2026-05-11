@@ -1,6 +1,7 @@
 // Stats Repository - localStorage implementation for reading statistics
 import type { ReadingStats } from '../../domain/entities/ReadingStats';
 import { defaultStats } from '../../domain/entities/ReadingStats';
+import type { Bookmark } from '../../domain/entities/Bookmark';
 
 const STATS_KEY = 'rsvp_stats';
 const BOOKMARK_KEY = 'rsvp_bookmarks';
@@ -75,15 +76,50 @@ export class StatsRepository {
     }
     this.saveStatsToStorage(stats);
   }
-}
 
-// Bookmark interface
-export interface Bookmark {
-  id: string;
-  bookId: string;
-  position: number;
-  label: string;
-  createdAt: string;
+  async recordReadingActivity(params: {
+    minutesRead: number;
+    wpm: number;
+    completedBook?: boolean;
+    countSession?: boolean;
+  }): Promise<void> {
+    const stats = this.getStatsFromStorage();
+    const minutesRead = Math.max(0, params.minutesRead);
+    const roundedMinutes = Math.round(minutesRead * 10) / 10;
+    const wordsRead = Math.round(minutesRead * params.wpm);
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+    if (stats.lastReadDate === today) {
+      stats.todayMinutes = Math.round((stats.todayMinutes + roundedMinutes) * 10) / 10;
+    } else {
+      if (stats.lastReadDate === yesterday) {
+        stats.currentStreak += 1;
+      } else {
+        stats.currentStreak = 1;
+      }
+      stats.todayMinutes = roundedMinutes;
+      stats.lastReadDate = today;
+    }
+
+    stats.totalMinutes = Math.round((stats.totalMinutes + roundedMinutes) * 10) / 10;
+    stats.totalWordsRead += wordsRead;
+    stats.lastSessionWpm = params.wpm;
+
+    if (params.countSession && minutesRead > 0) {
+      const totalWeightedWpm = (stats.averageWpm * stats.totalSessions) + params.wpm;
+      stats.totalSessions += 1;
+      stats.averageWpm = Math.round(totalWeightedWpm / stats.totalSessions);
+    } else if (stats.totalSessions === 0 && params.wpm > 0) {
+      stats.averageWpm = params.wpm;
+    }
+
+    if (params.completedBook) {
+      stats.booksCompleted += 1;
+    }
+
+    this.saveStatsToStorage(stats);
+  }
 }
 
 export class BookmarkRepository {

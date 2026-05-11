@@ -1,13 +1,31 @@
 import { useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useLibrary } from '../contexts/LibraryContext';
 import { useReader } from '../contexts/ReaderContext';
 import type { Book } from '../../domain/entities/Book';
 
+function formatLastRead(lastReadAt: string | null) {
+  if (!lastReadAt) return 'Never opened';
+
+  const date = new Date(lastReadAt);
+  if (Number.isNaN(date.getTime())) return 'Recently';
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}
+
 export function LibraryScreen() {
-  const { books, isLoading, error, importBook, deleteBook, toggleFavorite } = useLibrary();
-  const { openBook } = useReader();
+  const navigate = useNavigate();
+  const { books, isLoading, error, importBook, importArticleUrl, deleteBook, toggleFavorite } = useLibrary();
+  const { openBook, resumeLastSession, lastSession, isRestoringSession } = useReader();
   const [isImporting, setIsImporting] = useState(false);
+  const [isImportingArticle, setIsImportingArticle] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [articleUrl, setArticleUrl] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -20,7 +38,7 @@ export function LibraryScreen() {
       console.log('[Import] Success:', file.name);
     } catch (err) {
       console.error('[Import] Failed:', err);
-      alert(`Import failed: ${err?.message || err}. Try a different file.`);
+      alert(`Import failed: ${err instanceof Error ? err.message : err}. Try a different file.`);
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -66,7 +84,32 @@ export function LibraryScreen() {
 
   const handleBookClick = async (book: Book) => {
     await openBook(book);
-    window.location.hash = '/reader';
+    navigate('/reader');
+  };
+
+  const handleContinueReading = async () => {
+    const resumed = await resumeLastSession();
+    if (resumed) {
+      navigate('/reader');
+    }
+  };
+
+  const handleArticleImport = async () => {
+    const trimmed = articleUrl.trim();
+    if (!trimmed) return;
+
+    setIsImportingArticle(true);
+    try {
+      const book = await importArticleUrl(trimmed);
+      setArticleUrl('');
+      await openBook(book);
+      navigate('/reader');
+    } catch (err) {
+      console.error('[Article Import] Failed:', err);
+      alert(`Article import failed: ${err instanceof Error ? err.message : err}. Try another URL.`);
+    } finally {
+      setIsImportingArticle(false);
+    }
   };
 
   if (isLoading) {
@@ -90,7 +133,10 @@ export function LibraryScreen() {
       onDragLeave={handleDragLeave}
     >
       <header className="flex items-center justify-between p-4 border-b border-gray-800">
-        <h1 className="text-xl font-semibold text-white">Library</h1>
+        <div>
+          <h1 className="text-xl font-semibold text-white">Library</h1>
+          <p className="text-xs text-gray-500 mt-1">Imported books and resume history</p>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -117,7 +163,6 @@ export function LibraryScreen() {
         </div>
       </header>
 
-      {/* Drag overlay */}
       {isDragOver && (
         <div className="fixed inset-0 z-50 bg-blue-900/50 flex items-center justify-center pointer-events-none">
           <div className="p-8 border-2 border-dashed border-blue-400 rounded-xl text-center">
@@ -135,11 +180,67 @@ export function LibraryScreen() {
         </div>
       )}
 
-      <main className="flex-1 p-4 overflow-auto">
+      <main className="flex-1 p-4 overflow-auto pb-24">
+        <div className="mb-4 rounded-2xl border border-gray-800 bg-gray-950/80 p-4">
+          <div className="text-xs uppercase tracking-wide text-blue-300">Send an article to read</div>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <input
+              value={articleUrl}
+              onChange={(e) => setArticleUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleArticleImport();
+                }
+              }}
+              placeholder="Paste an article URL"
+              className="flex-1 rounded-xl bg-gray-900 px-3 py-2 text-sm text-white outline-none ring-1 ring-gray-800 focus:ring-blue-500"
+            />
+            <button
+              onClick={() => { void handleArticleImport(); }}
+              disabled={isImportingArticle || !articleUrl.trim()}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            >
+              {isImportingArticle ? 'Importing...' : 'Import URL'}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Best for public articles, blog posts, and web pages. We extract the readable text and open it in the reader.
+          </p>
+        </div>
+
+        {lastSession && (
+          <div className="mb-4 rounded-2xl border border-blue-800 bg-gradient-to-r from-blue-950 to-slate-950 p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-blue-300">Continue Reading</div>
+                <h2 className="text-lg font-semibold text-white mt-1">{lastSession.title}</h2>
+                <p className="text-sm text-gray-400">{lastSession.author}</p>
+                <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-400">
+                  <span>{lastSession.progress}% complete</span>
+                  <span>Word {Math.min(lastSession.position + 1, lastSession.totalWords)} of {lastSession.totalWords}</span>
+                  <span>Saved {formatLastRead(lastSession.lastSavedAt)}</span>
+                  <span className="capitalize">{lastSession.lastSavedSource} save</span>
+                </div>
+                {lastSession.lastWord && (
+                  <p className="text-sm text-blue-200 mt-2">Last word: {lastSession.lastWord}</p>
+                )}
+              </div>
+              <button
+                onClick={handleContinueReading}
+                disabled={isRestoringSession}
+                className="shrink-0 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+              >
+                {isRestoringSession ? 'Restoring...' : 'Continue'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {books.length === 0 ? (
           <div
             className={`flex flex-col items-center justify-center mt-20 border-2 border-dashed rounded-xl p-8 transition-colors ${isDragOver ? 'border-blue-400 bg-blue-900/20' : 'border-gray-700'}`}
-            onDrop={(e) => { e.preventDefault(); handleDrop(e); }}
+            onDrop={(e) => { e.preventDefault(); void handleDrop(e); }}
             onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
           >
             <svg className="w-16 h-16 text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -160,14 +261,18 @@ export function LibraryScreen() {
             {books.map((book) => (
               <div
                 key={book.id}
-                onClick={() => handleBookClick(book)}
+                onClick={() => { void handleBookClick(book); }}
                 className="relative bg-gray-900 rounded-lg p-3 cursor-pointer hover:bg-gray-800 transition-colors border border-gray-800"
               >
                 <div className="aspect-[3/4] bg-gray-700 rounded mb-2 flex items-center justify-center overflow-hidden">
-                  <span className="text-4xl">📖</span>
+                  {book.coverImage ? (
+                    <img src={book.coverImage} alt={book.title} className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-4xl">📖</span>
+                  )}
                 </div>
                 <button
-                  onClick={(e) => handleFavorite(book, e)}
+                  onClick={(e) => { void handleFavorite(book, e); }}
                   className="absolute top-4 right-4 p-1 rounded-full bg-black/50"
                 >
                   {book.isFavorite ? (
@@ -181,8 +286,8 @@ export function LibraryScreen() {
                   )}
                 </button>
                 <button
-                  onClick={(e) => handleDelete(book, e)}
-                  className="absolute bottom-20 right-2 p-1 rounded-full bg-black/50 hover:bg-red-600 transition-colors"
+                  onClick={(e) => { void handleDelete(book, e); }}
+                  className="absolute bottom-24 right-2 p-1 rounded-full bg-black/50 hover:bg-red-600 transition-colors"
                 >
                   <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -198,6 +303,14 @@ export function LibraryScreen() {
                     <span className="text-xs text-gray-500">{book.currentProgress}%</span>
                     <span className="text-xs text-gray-500">{book.totalWords} words</span>
                   </div>
+                  <div className="mt-2 text-[11px] text-gray-500">
+                    Last read {formatLastRead(book.lastReadAt)}
+                  </div>
+                  {book.chapters.length > 0 && (
+                    <div className="mt-1 text-[11px] text-gray-500">
+                      {book.chapters.length} chapter{book.chapters.length === 1 ? '' : 's'}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
