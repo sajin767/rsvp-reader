@@ -3,6 +3,7 @@ import type { ReadingStats } from '../../domain/entities/ReadingStats';
 import { defaultStats } from '../../domain/entities/ReadingStats';
 import { AppBackupRepository } from '../../data/repositories/AppBackupRepository';
 import { StatsRepository } from '../../data/repositories/StatsRepository';
+import { useAuth } from '../contexts/AuthContext';
 import { useLibrary } from '../contexts/LibraryContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -27,10 +28,14 @@ const statsRepository = new StatsRepository();
 const appBackupRepository = new AppBackupRepository();
 
 export function SettingsScreen() {
+  const auth = useAuth();
   const { settings, updateSettings, resetSettings } = useSettings();
   const { isDark, toggleTheme } = useTheme();
   const { refreshLibrary } = useLibrary();
   const [stats, setStats] = useState<ReadingStats>(defaultStats);
+  const [syncEmail, setSyncEmail] = useState('');
+  const [syncStatus, setSyncStatus] = useState('');
+  const [syncError, setSyncError] = useState('');
 
   useEffect(() => {
     void statsRepository.getStats().then(setStats);
@@ -60,6 +65,39 @@ export function SettingsScreen() {
       alert(`Backup import failed: ${error instanceof Error ? error.message : 'Invalid backup file'}`);
     } finally {
       event.target.value = '';
+    }
+  };
+
+  const handleSendEmailLink = async () => {
+    setSyncError('');
+    setSyncStatus('');
+    try {
+      await auth.sendEmailLink(syncEmail);
+      setSyncStatus('Check your email for the sign-in link.');
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Failed to send sign-in link.');
+    }
+  };
+
+  const handleCompleteEmailLink = async () => {
+    setSyncError('');
+    setSyncStatus('');
+    try {
+      await auth.completeEmailLink(syncEmail);
+      setSyncStatus('Signed in.');
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Failed to complete sign-in.');
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSyncError('');
+    setSyncStatus('');
+    try {
+      await auth.signOut();
+      setSyncStatus('Signed out.');
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : 'Failed to sign out.');
     }
   };
 
@@ -396,6 +434,77 @@ export function SettingsScreen() {
 
           <div className="bg-surface rounded-xl p-4 space-y-4">
             <div>
+              <div className="text-sm text-white">Account sync</div>
+              <div className="text-xs text-gray-500 mt-1">
+                Sign in only when you want to sync app state across devices.
+              </div>
+            </div>
+
+            {auth.configError ? (
+              <div className="rounded-lg bg-red-950/60 p-3 text-xs text-red-200">
+                {auth.configError}
+              </div>
+            ) : auth.isAuthenticated ? (
+              <div className="space-y-3">
+                <div className="rounded-lg bg-gray-900 p-3">
+                  <div className="text-xs text-gray-500">Signed in as</div>
+                  <div className="mt-1 text-sm text-white break-all">{auth.email}</div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    disabled
+                    className="flex-1 rounded-lg bg-gray-800 py-2 text-sm text-gray-500"
+                  >
+                    Sync Coming Next
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void handleSignOut(); }}
+                    className="flex-1 rounded-lg bg-gray-800 py-2 text-sm text-gray-200 hover:bg-gray-700"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <input
+                  type="email"
+                  value={syncEmail}
+                  onChange={(event) => { setSyncEmail(event.target.value); }}
+                  placeholder="Email address"
+                  className="w-full rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-200 outline-none ring-1 ring-gray-700 focus:ring-blue-500"
+                />
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { void handleSendEmailLink(); }}
+                    disabled={auth.isLoading}
+                    className="flex-1 rounded-lg bg-blue-600 py-2 text-sm text-white hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500"
+                  >
+                    Send Sign-In Link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void handleCompleteEmailLink(); }}
+                    disabled={auth.isLoading}
+                    className="flex-1 rounded-lg bg-gray-800 py-2 text-sm text-gray-200 hover:bg-gray-700 disabled:text-gray-500"
+                  >
+                    Complete Login
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {syncStatus && (
+              <div className="rounded-lg bg-blue-950/60 p-3 text-xs text-blue-200">{syncStatus}</div>
+            )}
+            {syncError && (
+              <div className="rounded-lg bg-red-950/60 p-3 text-xs text-red-200">{syncError}</div>
+            )}
+
+            <div>
               <div className="text-sm text-white">Portable sync file</div>
               <div className="text-xs text-gray-500 mt-1">
                 Export your full app state and store it in iCloud Drive, Google Drive, Dropbox, or any other cloud folder.
@@ -412,9 +521,6 @@ export function SettingsScreen() {
                 Import Backup
                 <input type="file" accept=".json,application/json" onChange={(e) => { void handleImportBackup(e); }} className="hidden" />
               </label>
-            </div>
-            <div className="text-xs text-amber-300">
-              Full account-based sync is not in this repo yet because it requires a backend and auth provider.
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { ThemeProvider } from './presentation/contexts/ThemeContext';
+import { AuthProvider } from './presentation/contexts/AuthContext';
 import { SettingsProvider } from './presentation/contexts/SettingsContext';
 import { LibraryProvider } from './presentation/contexts/LibraryContext';
 import { ReaderProvider } from './presentation/contexts/ReaderContext';
@@ -39,23 +40,25 @@ function BottomNav() {
 function App() {
   return (
     <ThemeProvider>
-      <SettingsProvider>
-        <LibraryProvider>
-          <ReaderProvider>
-            <BrowserRouter>
-              <div className="min-h-screen bg-background pb-16">
-                <Routes>
-                  <Route path="/library" element={<LibraryScreen />} />
-                  <Route path="/reader" element={<ReaderScreen />} />
-                  <Route path="/settings" element={<SettingsScreen />} />
-                  <Route path="*" element={<LibraryScreen />} />
-                </Routes>
-                <BottomNav />
-              </div>
-            </BrowserRouter>
-          </ReaderProvider>
-        </LibraryProvider>
-      </SettingsProvider>
+      <AuthProvider>
+        <SettingsProvider>
+          <LibraryProvider>
+            <ReaderProvider>
+              <BrowserRouter>
+                <div className="min-h-screen bg-background pb-16">
+                  <Routes>
+                    <Route path="/library" element={<LibraryScreen />} />
+                    <Route path="/reader" element={<ReaderScreen />} />
+                    <Route path="/settings" element={<SettingsScreen />} />
+                    <Route path="*" element={<LibraryScreen />} />
+                  </Routes>
+                  <BottomNav />
+                </div>
+              </BrowserRouter>
+            </ReaderProvider>
+          </LibraryProvider>
+        </SettingsProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
